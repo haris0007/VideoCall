@@ -28,7 +28,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// ➤ OTP API
+// OTP routes
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -57,11 +57,11 @@ app.post("/verify-otp", async (req, res) => {
   }
 });
 
-// ➤ WebRTC Signaling over Socket.IO
-const clients = new Map(); // email => socket.id
+// WebRTC signaling
+const clients = new Map();
 
 io.on("connection", (socket) => {
-  console.log("🔗 New user connected:", socket.id);
+  console.log("🔗 Connected:", socket.id);
 
   socket.on("register", (email) => {
     socket.email = email;
@@ -70,49 +70,46 @@ io.on("connection", (socket) => {
   });
 
   socket.on("call", ({ to, offer, from }) => {
-    const targetSocketId = clients.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("incoming-call", { from, offer });
+    const targetId = clients.get(to);
+    if (targetId) {
+      io.to(targetId).emit("incoming-call", { from, offer });
     }
   });
 
   socket.on("answer", ({ to, answer }) => {
-    const targetSocketId = clients.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("call-answered", { answer });
+    const targetId = clients.get(to);
+    if (targetId) {
+      io.to(targetId).emit("call-answered", { answer });
     }
   });
 
   socket.on("ice-candidate", ({ to, candidate }) => {
-    const targetSocketId = clients.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("ice-candidate", { candidate });
+    const targetId = clients.get(to);
+    if (targetId) {
+      io.to(targetId).emit("ice-candidate", { candidate });
     }
   });
 
   socket.on("reject", ({ to }) => {
-    const targetSocketId = clients.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("call-rejected");
+    const targetId = clients.get(to);
+    if (targetId) {
+      io.to(targetId).emit("call-rejected");
     }
   });
 
   socket.on("end-call", ({ to }) => {
-    const targetSocketId = clients.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("call-ended");
+    const targetId = clients.get(to);
+    if (targetId) {
+      io.to(targetId).emit("call-ended");
     }
   });
 
   socket.on("disconnect", () => {
-    if (socket.email) {
-      clients.delete(socket.email);
-      console.log(`🔌 ${socket.email} disconnected`);
-    }
+    if (socket.email) clients.delete(socket.email);
   });
 });
 
-server.listen(process.env.PORT || 8000, () => {
-  console.log(`🚀 Server running on http://localhost:${process.env.PORT || 8000}`);
-});
+server.listen(process.env.PORT || 8000, () =>
+  console.log(`🚀 Server running on http://localhost:${process.env.PORT || 8000}`)
+);
 
