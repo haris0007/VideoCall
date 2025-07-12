@@ -78,6 +78,21 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("reject-call", ({ to }) => {
+  const targetId = users.get(to);
+  if (targetId) {
+    io.to(targetId).emit("call-rejected");
+  }
+});
+
+socket.on("end-call", ({ to }) => {
+  const targetId = users.get(to);
+  if (targetId) {
+    io.to(targetId).emit("call-ended");
+  }
+});
+
+
   socket.on("answer", ({ to, answer }) => {
     io.to(to).emit("call-answered", { from: socket.id, answer });
   });
