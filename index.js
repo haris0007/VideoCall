@@ -13,13 +13,16 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Middleware
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+// MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ MongoDB error:", err));
 
+// Nodemailer
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -28,7 +31,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// OTP API
+// OTP Routes
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -57,12 +60,22 @@ app.post("/verify-otp", async (req, res) => {
   }
 });
 
-// Socket.IO video call signaling
+// WebRTC Signaling via Socket.IO
+const users = new Map();
+
 io.on("connection", (socket) => {
   console.log("🔗 New user connected:", socket.id);
 
+  socket.on("register", (email) => {
+    users.set(email, socket.id);
+    socket.email = email;
+  });
+
   socket.on("call", ({ to, offer }) => {
-    io.to(to).emit("incoming-call", { from: socket.id, offer });
+    const targetId = users.get(to);
+    if (targetId) {
+      io.to(targetId).emit("incoming-call", { from: socket.id, offer });
+    }
   });
 
   socket.on("answer", ({ to, answer }) => {
@@ -73,11 +86,12 @@ io.on("connection", (socket) => {
     io.to(to).emit("ice-candidate", { from: socket.id, candidate });
   });
 
-  socket.on("end-call", ({ to }) => {
-    io.to(to).emit("call-ended");
+  socket.on("disconnect", () => {
+    if (socket.email) users.delete(socket.email);
   });
 });
 
-server.listen(process.env.PORT, () =>
-  console.log(`🚀 Server running at http://localhost:${process.env.PORT}`)
+server.listen(process.env.PORT || 8000, () =>
+  console.log(`🚀 Server running at http://localhost:${process.env.PORT || 8000}`)
 );
+
