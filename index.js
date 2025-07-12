@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -13,16 +14,13 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Middleware
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ MongoDB error:", err));
 
-// Nodemailer
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -31,7 +29,6 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// OTP Routes
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -60,49 +57,41 @@ app.post("/verify-otp", async (req, res) => {
   }
 });
 
-// WebRTC Signaling via Socket.IO
 const users = new Map();
 
 io.on("connection", (socket) => {
-  console.log("🔗 New user connected:", socket.id);
+  console.log("🔗 Connected:", socket.id);
 
   socket.on("register", (email) => {
     users.set(email, socket.id);
-    socket.email = email;
   });
 
-  socket.on("call", ({ to, offer }) => {
-    const targetId = users.get(to);
-    if (targetId) {
-      io.to(targetId).emit("incoming-call", { from: socket.id, offer });
+  socket.on("call", ({ to, offer, from }) => {
+    const targetSocket = users.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit("incoming-call", { from, offer });
     }
   });
 
-  socket.on("reject-call", ({ to }) => {
-  const targetId = users.get(to);
-  if (targetId) {
-    io.to(targetId).emit("call-rejected");
-  }
-});
-
-socket.on("end-call", ({ to }) => {
-  const targetId = users.get(to);
-  if (targetId) {
-    io.to(targetId).emit("call-ended");
-  }
-});
-
-
   socket.on("answer", ({ to, answer }) => {
-    io.to(to).emit("call-answered", { from: socket.id, answer });
+    const targetSocket = users.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit("call-answered", { answer });
+    }
   });
 
   socket.on("ice-candidate", ({ to, candidate }) => {
-    io.to(to).emit("ice-candidate", { from: socket.id, candidate });
+    const targetSocket = users.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit("ice-candidate", { candidate });
+    }
   });
 
-  socket.on("disconnect", () => {
-    if (socket.email) users.delete(socket.email);
+  socket.on("end-call", ({ to }) => {
+    const targetSocket = users.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit("call-ended");
+    }
   });
 });
 
