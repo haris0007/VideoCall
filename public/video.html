@@ -6,15 +6,17 @@
   <title>Video Call</title>
   <style>
     body {
-      margin: 0;
       font-family: sans-serif;
-      background: #eef6ff;
+      margin: 0;
+      background: #f0f8ff;
       display: flex;
       flex-direction: column;
       align-items: center;
     }
 
-    h2 { margin: 20px; }
+    h2 {
+      margin: 20px;
+    }
 
     .video-container {
       position: relative;
@@ -107,15 +109,18 @@
     const myEmail = localStorage.getItem("email");
     document.getElementById("emailDisplay").textContent = myEmail || "";
 
-    if (!myEmail) location.href = "index.html";
+    if (!myEmail) {
+      location.href = "index.html";
+    }
+
     socket.emit("register", myEmail);
     alert("👋 Welcome, " + myEmail);
 
-    let pc = null;
-    let localStream = null;
     let target = null;
+    let pc = null;
+    let localStream;
 
-    async function setupPeer() {
+    async function setupPeerConnection() {
       pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
       });
@@ -132,25 +137,34 @@
 
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       document.getElementById("myVideo").srcObject = localStream;
-      localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
     }
 
     async function startCall() {
       target = document.getElementById("callTo").value;
       if (!target) return alert("Enter email to call");
-      await setupPeer();
+
+      if (pc) pc.close();
+      await setupPeerConnection();
+
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit("call", { to: target, offer, from: myEmail });
     }
 
     function endCall() {
-      if (pc) pc.close();
-      pc = null;
-      socket.emit("end-call", { to: target });
-      location.reload();
+      if (pc) {
+        pc.getSenders().forEach(s => pc.removeTrack(s));
+        pc.close();
+        pc = null;
+      }
+      target = null;
+      document.getElementById("remoteVideo").srcObject = null;
+      alert("Call ended");
     }
 
+    // Incoming Call
     socket.on("incoming-call", async ({ from, offer }) => {
       target = from;
       document.getElementById("callerEmail").textContent = from;
@@ -158,7 +172,9 @@
 
       window.acceptCall = async () => {
         document.getElementById("incomingCallBox").style.display = "none";
-        await setupPeer();
+        if (pc) pc.close();
+        await setupPeerConnection();
+
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -174,7 +190,7 @@
     });
 
     socket.on("call-rejected", () => {
-      alert("❌ Call was rejected");
+      alert("❌ Call was rejected by the other user");
     });
 
     socket.on("call-answered", async ({ answer }) => {
@@ -185,8 +201,8 @@
       if (pc && candidate) {
         try {
           await pc.addIceCandidate(candidate);
-        } catch (e) {
-          console.error("ICE error:", e);
+        } catch (err) {
+          console.error("ICE error:", err);
         }
       }
     });
@@ -198,6 +214,7 @@
   </script>
 </body>
 </html>
+
 
 
 
