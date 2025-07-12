@@ -1,20 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Video Login</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Video Call Login</title>
   <style>
-    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin-top: 100px; }
-    input, button { padding: 10px; margin: 5px; }
+    body {
+      font-family: sans-serif;
+      background: #f4f4f4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    input {
+      padding: 10px;
+      margin: 10px 0;
+      width: 100%;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
   </style>
 </head>
 <body>
-  <h2>Login to Video App</h2>
-  <input type="email" id="email" placeholder="Enter email" />
-  <button onclick="sendOtp()">Send OTP</button>
-  <br />
-  <input type="text" id="otp" placeholder="Enter OTP" />
-  <button onclick="verifyOtp()">Verify OTP</button>
+  <div class="container">
+    <h2>Login to Video Call</h2>
+    <input type="email" id="email" placeholder="Enter your email" />
+    <button onclick="sendOtp()">Send OTP</button>
+    <input type="text" id="otp" placeholder="Enter OTP" />
+    <button onclick="verifyOtp()">Verify & Continue</button>
+  </div>
 
   <script>
     function sendOtp() {
@@ -23,24 +56,25 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email })
-      }).then(res => res.json()).then(data => alert(data.message));
+      }).then(res => res.json()).then(data => {
+        alert(data.message);
+      });
     }
 
     function verifyOtp() {
       const email = document.getElementById("email").value;
       const otp = document.getElementById("otp").value;
+
       fetch("/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp })
-      })
-      .then(res => res.json())
-      .then(data => {
+      }).then(res => res.json()).then(data => {
         if (data.success) {
           localStorage.setItem("email", email);
           window.location.href = "video.html";
         } else {
-          alert(data.message || "Verification failed");
+          alert(data.message || "Invalid OTP");
         }
       });
     }
