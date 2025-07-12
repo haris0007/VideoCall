@@ -1,10 +1,9 @@
-// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const mongoose = require("mongoose");
-const nodemailer = require("nodemailer");
 const bodyParser = require("body-parser");
+const nodemailer = require("nodemailer");
 const path = require("path");
 require("dotenv").config();
 
@@ -19,7 +18,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err));
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -29,6 +28,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// ➤ OTP API
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -38,7 +38,7 @@ app.post("/send-otp", async (req, res) => {
   await transporter.sendMail({
     from: process.env.EMAIL_USER,
     to: email,
-    subject: "Your OTP",
+    subject: "Video Call OTP",
     text: `Your OTP is: ${otp}`
   });
 
@@ -57,45 +57,62 @@ app.post("/verify-otp", async (req, res) => {
   }
 });
 
-const users = new Map();
+// ➤ WebRTC Signaling over Socket.IO
+const clients = new Map(); // email => socket.id
 
 io.on("connection", (socket) => {
-  console.log("🔗 Connected:", socket.id);
+  console.log("🔗 New user connected:", socket.id);
 
   socket.on("register", (email) => {
-    users.set(email, socket.id);
+    socket.email = email;
+    clients.set(email, socket.id);
+    console.log(`✅ Registered: ${email} -> ${socket.id}`);
   });
 
   socket.on("call", ({ to, offer, from }) => {
-    const targetSocket = users.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit("incoming-call", { from, offer });
+    const targetSocketId = clients.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("incoming-call", { from, offer });
     }
   });
 
   socket.on("answer", ({ to, answer }) => {
-    const targetSocket = users.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit("call-answered", { answer });
+    const targetSocketId = clients.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("call-answered", { answer });
     }
   });
 
   socket.on("ice-candidate", ({ to, candidate }) => {
-    const targetSocket = users.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit("ice-candidate", { candidate });
+    const targetSocketId = clients.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("ice-candidate", { candidate });
+    }
+  });
+
+  socket.on("reject", ({ to }) => {
+    const targetSocketId = clients.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("call-rejected");
     }
   });
 
   socket.on("end-call", ({ to }) => {
-    const targetSocket = users.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit("call-ended");
+    const targetSocketId = clients.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("call-ended");
+    }
+  });
+
+  socket.on("disconnect", () => {
+    if (socket.email) {
+      clients.delete(socket.email);
+      console.log(`🔌 ${socket.email} disconnected`);
     }
   });
 });
 
-server.listen(process.env.PORT || 8000, () =>
-  console.log(`🚀 Server running at http://localhost:${process.env.PORT || 8000}`)
-);
+server.listen(process.env.PORT || 8000, () => {
+  console.log(`🚀 Server running on http://localhost:${process.env.PORT || 8000}`);
+});
 

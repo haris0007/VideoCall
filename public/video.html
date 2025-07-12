@@ -1,4 +1,3 @@
-<!-- public/video.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,21 +7,44 @@
   <style>
     body {
       font-family: sans-serif;
-      background: #e6f2ff;
       margin: 0;
-      padding: 20px;
+      background: #f0f8ff;
       display: flex;
       flex-direction: column;
       align-items: center;
     }
 
-    video {
-      width: 90%;
-      max-width: 800px;
-      height: auto;
-      margin: 10px 0;
-      border-radius: 10px;
+    h2 {
+      margin: 20px;
+    }
+
+    .video-container {
+      position: relative;
+      width: 100%;
+      max-width: 900px;
+      height: 500px;
       background: black;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    #remoteVideo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #myVideo {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      width: 160px;
+      height: 120px;
+      border: 2px solid white;
+      border-radius: 8px;
+      background: black;
+      object-fit: cover;
+      z-index: 10;
     }
 
     .controls {
@@ -41,38 +63,33 @@
       background: #007bff;
       color: white;
       cursor: pointer;
+      border: none;
     }
 
-    #notification {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #007bff;
-      color: white;
-      padding: 12px 20px;
-      border-radius: 6px;
-      display: none;
-      z-index: 999;
-    }
-
-    #incoming {
+    #incomingCallBox {
       display: none;
       position: fixed;
       top: 30%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #fff;
+      background: white;
       padding: 20px;
       border-radius: 10px;
-      text-align: center;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      border: 2px solid #007bff;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      z-index: 999;
+    }
+
+    #incomingCallBox button {
+      margin: 10px;
     }
   </style>
 </head>
 <body>
   <h2>Welcome, <span id="emailDisplay"></span></h2>
-  <video id="myVideo" autoplay muted></video>
-  <video id="remoteVideo" autoplay></video>
+
+  <div class="video-container">
+    <video id="remoteVideo" autoplay playsinline></video>
+    <video id="myVideo" autoplay muted playsinline></video>
+  </div>
 
   <div class="controls">
     <input type="text" id="callTo" placeholder="Email to call..." />
@@ -80,10 +97,8 @@
     <button onclick="endCall()">End</button>
   </div>
 
-  <div id="notification"></div>
-
-  <div id="incoming">
-    <p id="callerName"></p>
+  <div id="incomingCallBox">
+    <p><strong id="callerEmail"></strong> is calling...</p>
     <button onclick="acceptCall()">Accept</button>
     <button onclick="rejectCall()">Reject</button>
   </div>
@@ -92,108 +107,109 @@
   <script>
     const socket = io();
     const myEmail = localStorage.getItem("email");
-    document.getElementById("emailDisplay").textContent = myEmail;
-    const notification = document.getElementById("notification");
+    document.getElementById("emailDisplay").textContent = myEmail || "";
 
-    if (!myEmail) location.href = "index.html";
+    if (!myEmail) {
+      location.href = "index.html";
+    }
 
     socket.emit("register", myEmail);
-    showNotification("👋 Welcome " + myEmail);
+    alert("👋 Welcome, " + myEmail);
 
-    let pc;
-    let localStream;
-    let remoteStream;
     let target = null;
-    let incomingOffer;
+    let pc = null;
+    let localStream;
 
-    const myVideo = document.getElementById("myVideo");
-    const remoteVideo = document.getElementById("remoteVideo");
+    async function setupPeerConnection() {
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
 
-    async function setupConnection() {
-      pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-
-      pc.onicecandidate = e => {
-        if (e.candidate) socket.emit("ice-candidate", { to: target, candidate: e.candidate });
+      pc.ontrack = (e) => {
+        document.getElementById("remoteVideo").srcObject = e.streams[0];
       };
 
-      pc.ontrack = e => {
-        remoteVideo.srcObject = e.streams[0];
-        remoteVideo.requestFullscreen().catch(() => {});
+      pc.onicecandidate = (e) => {
+        if (e.candidate && target) {
+          socket.emit("ice-candidate", { to: target, candidate: e.candidate });
+        }
       };
 
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      myVideo.srcObject = localStream;
+      document.getElementById("myVideo").srcObject = localStream;
+
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
     }
 
     async function startCall() {
-      target = document.getElementById("callTo").value.trim();
-      await setupConnection();
+      target = document.getElementById("callTo").value;
+      if (!target) return alert("Enter email to call");
+
+      await setupPeerConnection();
+
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit("call", { to: target, offer, from: myEmail });
     }
 
     function endCall() {
-      if (pc) pc.close();
-      pc = null;
-      remoteVideo.srcObject = null;
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
       target = null;
-      showNotification("📴 Call Ended", "#dc3545");
+      alert("Call ended");
+      location.reload();
     }
 
-    function showNotification(msg, bg = "#007bff") {
-      notification.textContent = msg;
-      notification.style.backgroundColor = bg;
-      notification.style.display = "block";
-      setTimeout(() => notification.style.display = "none", 4000);
-    }
-
-    // Incoming call handler
+    // Incoming Call
     socket.on("incoming-call", async ({ from, offer }) => {
       target = from;
-      incomingOffer = offer;
-      document.getElementById("callerName").textContent = `${from} is calling you...`;
-      document.getElementById("incoming").style.display = "block";
+      document.getElementById("callerEmail").textContent = from;
+      document.getElementById("incomingCallBox").style.display = "block";
+
+      window.acceptCall = async () => {
+        document.getElementById("incomingCallBox").style.display = "none";
+        await setupPeerConnection();
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit("answer", { to: from, answer });
+        alert("✅ Call accepted");
+      };
+
+      window.rejectCall = () => {
+        socket.emit("reject", { to: from });
+        document.getElementById("incomingCallBox").style.display = "none";
+        alert("❌ Call rejected");
+      };
     });
 
-    async function acceptCall() {
-      await setupConnection();
-      await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket.emit("answer", { to: target, answer });
-      document.getElementById("incoming").style.display = "none";
-      showNotification("✅ Call accepted", "#28a745");
-    }
-
-    function rejectCall() {
-      socket.emit("end-call", { to: target });
-      document.getElementById("incoming").style.display = "none";
-      showNotification("❌ Call rejected", "#dc3545");
-    }
+    socket.on("call-rejected", () => {
+      alert("❌ Call was rejected by the other user");
+    });
 
     socket.on("call-answered", async ({ answer }) => {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
-      showNotification("✅ Call connected", "#28a745");
     });
 
     socket.on("ice-candidate", async ({ candidate }) => {
-      if (candidate && pc) {
+      if (pc && candidate) {
         try {
           await pc.addIceCandidate(candidate);
         } catch (err) {
-          console.error("ICE error", err);
+          console.error("ICE error:", err);
         }
       }
     });
 
     socket.on("call-ended", () => {
+      alert("📞 Call ended");
       endCall();
-      showNotification("📞 Call was ended by other user", "#ffc107");
     });
   </script>
 </body>
 </html>
+
 
 
